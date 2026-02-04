@@ -1,67 +1,128 @@
-name: Build APK
+name: 🚀 Build APK
 
-on: [push, workflow_dispatch]
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Setup Java
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: ⚙️ Setup Java
       uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
-    
-    - name: Setup Android
-      uses: android-actions/setup-android@v3
-    
-    - name: Create Android project
-      run: |
-        # Создаем самый простой рабочий проект
-        echo "Creating minimal Android project..."
+        cache: 'gradle'
         
-        # Корневые файлы
-        cat > build.gradle << 'EOF'
-        buildscript {
-            repositories { google(); mavenCentral() }
-            dependencies { classpath 'com.android.tools.build:gradle:7.4.2' }
-        }
-        allprojects { repositories { google(); mavenCentral() } }
+    - name: 🤖 Setup Android
+      uses: android-actions/setup-android@v3
+      
+    - name: 📝 Create project files
+      run: |
+        echo "Creating Android project files..."
+        
+        # 1. Gradle wrapper properties
+        mkdir -p gradle/wrapper
+        cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
+        distributionBase=GRADLE_USER_HOME
+        distributionPath=wrapper/dists
+        distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-bin.zip
+        zipStoreBase=GRADLE_USER_HOME
+        zipStorePath=wrapper/dists
         EOF
         
-        echo "include ':app'" > settings.gradle
+        # 2. Корневой build.gradle
+        cat > build.gradle << 'EOF'
+        plugins {
+            id 'com.android.application' version '8.1.0' apply false
+            id 'com.android.library' version '8.1.0' apply false
+        }
         
-        # App модуль
-        mkdir -p app/src/main/{java/com/test/app,res/layout}
+        tasks.register('clean', Delete) {
+            delete rootProject.buildDir
+        }
+        EOF
+        
+        # 3. settings.gradle
+        cat > settings.gradle << 'EOF'
+        pluginManagement {
+            repositories {
+                google()
+                mavenCentral()
+                gradlePluginPortal()
+            }
+        }
+        dependencyResolutionManagement {
+            repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+            repositories {
+                google()
+                mavenCentral()
+            }
+        }
+        
+        rootProject.name = "VoidAssistant"
+        include ':app'
+        EOF
+        
+        # 4. App build.gradle
+        mkdir -p app/src/main/{java/com/void/assistant,res/{layout,values}}
         
         cat > app/build.gradle << 'EOF'
-        plugins { id 'com.android.application' }
+        plugins {
+            id 'com.android.application'
+        }
+        
         android {
-            compileSdk 33
+            namespace 'com.void.assistant'
+            compileSdk 34
+        
             defaultConfig {
                 applicationId "com.void.assistant"
                 minSdk 21
-                targetSdk 33
+                targetSdk 34
                 versionCode 1
                 versionName "1.0"
             }
+        
             buildTypes {
-                debug { debuggable true }
+                release {
+                    minifyEnabled false
+                }
+                debug {
+                    debuggable true
+                }
+            }
+            compileOptions {
+                sourceCompatibility JavaVersion.VERSION_1_8
+                targetCompatibility JavaVersion.VERSION_1_8
             }
         }
+        
         dependencies {
             implementation 'androidx.appcompat:appcompat:1.6.1'
+            implementation 'com.google.android.material:material:1.10.0'
+            implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
         }
         EOF
         
+        # 5. Минимальный AndroidManifest
         cat > app/src/main/AndroidManifest.xml << 'EOF'
         <?xml version="1.0" encoding="utf-8"?>
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-            <application android:label="Test">
-                <activity android:name=".MainActivity" android:exported="true">
+            <application
+                android:allowBackup="true"
+                android:label="Void Assistant">
+                <activity
+                    android:name=".MainActivity"
+                    android:exported="true">
                     <intent-filter>
                         <action android:name="android.intent.action.MAIN" />
                         <category android:name="android.intent.category.LAUNCHER" />
@@ -71,34 +132,77 @@ jobs:
         </manifest>
         EOF
         
-        cat > app/src/main/java/com/test/app/MainActivity.java << 'EOF'
-        package com.test.app;
+        # 6. Простой MainActivity
+        cat > app/src/main/java/com/void/assistant/MainActivity.java << 'EOF'
+        package com.void.assistant;
+        
         import androidx.appcompat.app.AppCompatActivity;
         import android.os.Bundle;
+        
         public class MainActivity extends AppCompatActivity {
-            @Override protected void onCreate(Bundle savedInstanceState) {
+            @Override
+            protected void onCreate(Bundle savedInstanceState) {
                 super.onCreate(savedInstanceState);
+                setContentView(R.layout.activity_main);
             }
         }
         EOF
         
+        # 7. Простой layout
         cat > app/src/main/res/layout/activity_main.xml << 'EOF'
         <?xml version="1.0" encoding="utf-8"?>
-        <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+        <androidx.constraintlayout.widget.ConstraintLayout 
+            xmlns:android="http://schemas.android.com/apk/res/android"
+            xmlns:app="http://schemas.android.com/apk/res-auto"
             android:layout_width="match_parent"
             android:layout_height="match_parent">
-        </LinearLayout>
+            
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Hello Void Assistant!"
+                android:textSize="24sp"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent" />
+                
+        </androidx.constraintlayout.widget.ConstraintLayout>
         EOF
-    
-    - name: Build with Gradle
+        
+        # 8. Strings
+        cat > app/src/main/res/values/strings.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <resources>
+            <string name="app_name">Void Assistant</string>
+        </resources>
+        EOF
+        
+        echo "✅ Project files created"
+        
+    - name: 📦 Download gradlew
       run: |
-        # Используем системный gradle
-        gradle wrapper --gradle-version 7.5
+        # Скачиваем совместимый gradlew
+        curl -L https://raw.githubusercontent.com/gradle/gradle/v8.5.0/gradlew -o gradlew
         chmod +x gradlew
-        ./gradlew :app:assembleDebug --stacktrace
-    
-    - name: Upload APK
+        
+    - name: 🔨 Build APK
+      run: |
+        echo "Building APK with Gradle 8.5..."
+        ./gradlew clean assembleDebug --no-daemon --stacktrace
+        
+    - name: 📤 Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: app-apk
-        path: app/build/outputs/apk/debug/*.apk
+        name: void-assistant-apk
+        path: app/build/outputs/apk/debug/app-debug.apk
+        
+    - name: 📝 Summary
+      if: always()
+      run: |
+        echo "## Build Status: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+        if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
+          echo "✅ APK built successfully!" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ Build failed" >> $GITHUB_STEP_SUMMARY
+        fi
