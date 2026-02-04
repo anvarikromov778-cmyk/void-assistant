@@ -1,206 +1,341 @@
-name: Build APK
+name: Build Android APK
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ "main", "master" ]
   pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:
+    branches: [ "main", "master" ]
+  workflow_dispatch:  # Ручной запуск
+
+permissions:
+  contents: write  # Для создания релизов
+  pages: write
+  id-token: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+    - name: 📥 Checkout repository
+      uses: actions/checkout@v4
       
-    - name: Set up JDK 17
-      uses: actions/setup-java@v3
+    - name: ⚙️ Set up JDK 17
+      uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
+        cache: 'gradle'
         
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v2
+    - name: 🤖 Setup Android SDK
+      uses: android-actions/setup-android@v3
       
-    - name: Accept Android Licenses
+    - name: 📝 Accept Android Licenses
       run: |
-        yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses || true
-        $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+        $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "cmdline-tools;latest"
         
-    - name: Check Gradle Wrapper
+    - name: 🛠️ Create Gradle Wrapper if missing
       run: |
-        echo "Checking project structure..."
-        ls -la
         if [ ! -f "gradlew" ]; then
-          echo "gradlew not found, creating basic structure..."
-          # Создаем минимальную структуру если нет gradlew
+          echo "Creating Gradle wrapper..."
+          gradle wrapper --gradle-version 8.5 --distribution-type all
+          chmod +x ./gradlew
+        fi
+        
+    - name: 📁 Create project structure if missing
+      run: |
+        # Проверяем базовую структуру
+        if [ ! -d "app" ]; then
+          echo "Creating basic Android project structure..."
+          
+          # Корневые файлы
           cat > build.gradle << 'EOF'
+          // Top-level build file
           buildscript {
-              repositories { google(); mavenCentral() }
-              dependencies { classpath 'com.android.tools.build:gradle:8.1.0' }
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+              dependencies {
+                  classpath 'com.android.tools.build:gradle:8.1.3'
+              }
           }
+          
           allprojects {
-              repositories { google(); mavenCentral() }
+              repositories {
+                  google()
+                  mavenCentral()
+              }
           }
-          task clean(type: Delete) { delete rootProject.buildDir }
+          
+          task clean(type: Delete) {
+              delete rootProject.buildDir
+          }
           EOF
           
           cat > settings.gradle << 'EOF'
           pluginManagement {
-              repositories { google(); mavenCentral(); gradlePluginPortal() }
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
           }
           dependencyResolutionManagement {
               repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories { google(); mavenCentral() }
+              repositories {
+                  google()
+                  mavenCentral()
+              }
           }
+          
           rootProject.name = "VoidAssistant"
           include ':app'
           EOF
           
-          # Создаем упрощенный gradlew
-          cat > gradlew << 'EOF'
-          #!/bin/bash
-          echo "Using system gradle..."
-          gradle "$@"
-          EOF
-          chmod +x gradlew
-        fi
-        
-    - name: Create app directory if missing
-      run: |
-        if [ ! -d "app" ]; then
-          echo "Creating app directory structure..."
-          mkdir -p app/src/main/{java/com/void/assistant,res/{layout,values},assets}
+          # Структура app
+          mkdir -p app/src/main/{java/com/void/assistant,res/{layout,values,drawable},assets}
           
-          # Минимальный build.gradle для app
+          # app/build.gradle
           cat > app/build.gradle << 'EOF'
-          plugins { id 'com.android.application' }
+          plugins {
+              id 'com.android.application'
+          }
+          
           android {
               namespace 'com.void.assistant'
               compileSdk 34
+              
               defaultConfig {
                   applicationId "com.void.assistant"
                   minSdk 21
                   targetSdk 34
                   versionCode 1
                   versionName "1.0"
+                  
+                  testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
               }
+              
               buildTypes {
-                  release { minifyEnabled false }
-                  debug { debuggable true }
+                  release {
+                      minifyEnabled false
+                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                  }
+                  debug {
+                      debuggable true
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_1_8
+                  targetCompatibility JavaVersion.VERSION_1_8
               }
           }
+          
           dependencies {
               implementation 'androidx.appcompat:appcompat:1.6.1'
               implementation 'com.google.android.material:material:1.10.0'
+              implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+              testImplementation 'junit:junit:4.13.2'
+              androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+              androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
           }
           EOF
           
-          # Минимальный AndroidManifest.xml
+          # AndroidManifest.xml
           cat > app/src/main/AndroidManifest.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:tools="http://schemas.android.com/tools">
+              
+              <uses-permission android:name="android.permission.RECORD_AUDIO" />
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              
               <application
                   android:allowBackup="true"
                   android:icon="@mipmap/ic_launcher"
-                  android:label="Void Assistant">
-                  <activity android:name=".MainActivity"
-                      android:exported="true">
+                  android:label="@string/app_name"
+                  android:theme="@style/Theme.VoidAssistant"
+                  android:usesCleartextTraffic="true"
+                  tools:targetApi="31">
+                  
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:label="@string/app_name"
+                      android:theme="@style/Theme.VoidAssistant">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
                           <category android:name="android.intent.category.LAUNCHER" />
                       </intent-filter>
                   </activity>
+                  
               </application>
+              
           </manifest>
           EOF
           
-          # Простой MainActivity
+          # MainActivity.java
           mkdir -p app/src/main/java/com/void/assistant
           cat > app/src/main/java/com/void/assistant/MainActivity.java << 'EOF'
           package com.void.assistant;
+          
           import androidx.appcompat.app.AppCompatActivity;
           import android.os.Bundle;
+          import android.widget.Button;
+          import android.widget.TextView;
+          
           public class MainActivity extends AppCompatActivity {
-              @Override protected void onCreate(Bundle savedInstanceState) {
+              
+              private Button startButton;
+              private TextView statusText;
+              
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
                   setContentView(R.layout.activity_main);
+                  
+                  startButton = findViewById(R.id.start_button);
+                  statusText = findViewById(R.id.status_text);
+                  
+                  startButton.setOnClickListener(v -> {
+                      statusText.setText("Ассистент запущен!");
+                      startButton.setEnabled(false);
+                  });
               }
           }
           EOF
           
-          # Простой layout
+          # Layout
           cat > app/src/main/res/layout/activity_main.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
               android:layout_width="match_parent"
               android:layout_height="match_parent"
+              android:orientation="vertical"
+              android:padding="24dp"
               android:gravity="center"
-              android:orientation="vertical">
+              android:background="#121212">
+              
               <TextView
+                  android:id="@+id/status_text"
                   android:layout_width="wrap_content"
                   android:layout_height="wrap_content"
-                  android:text="Void Assistant"
-                  android:textSize="24sp" />
+                  android:text="Статус: Выключен"
+                  android:textSize="24sp"
+                  android:textColor="#FFFFFF"
+                  android:layout_marginBottom="40dp" />
+              
+              <Button
+                  android:id="@+id/start_button"
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:text="🚀 Запустить ассистент"
+                  android:textSize="18sp"
+                  android:padding="16dp"
+                  android:backgroundTint="#BB86FC"
+                  android:textColor="#000000" />
+                  
           </LinearLayout>
           EOF
           
-          # Strings
+          # Resources
           cat > app/src/main/res/values/strings.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
           <resources>
               <string name="app_name">Void Assistant</string>
           </resources>
           EOF
+          
+          cat > app/src/main/res/values/styles.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="Theme.VoidAssistant" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
+                  <item name="colorPrimary">@color/purple_500</item>
+                  <item name="colorPrimaryVariant">@color/purple_700</item>
+                  <item name="colorOnPrimary">@color/white</item>
+                  <item name="colorSecondary">@color/teal_200</item>
+                  <item name="colorSecondaryVariant">@color/teal_700</item>
+                  <item name="colorOnSecondary">@color/black</item>
+                  <item name="android:statusBarColor">?attr/colorPrimaryVariant</item>
+              </style>
+          </resources>
+          EOF
+          
+          cat > app/src/main/res/values/colors.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="purple_200">#FFBB86FC</color>
+              <color name="purple_500">#FF6200EE</color>
+              <color name="purple_700">#FF3700B3</color>
+              <color name="teal_200">#FF03DAC5</color>
+              <item name="teal_700">#FF018786</item>
+              <color name="black">#FF000000</color>
+              <color name="white">#FFFFFFFF</color>
+          </resources>
+          EOF
+          
+          echo "✅ Basic project structure created"
+        else
+          echo "✅ Project structure already exists"
         fi
         
-    - name: Build APK
+    - name: 🔨 Build APK
       run: |
-        # Даем права если gradlew существует
-        if [ -f "gradlew" ]; then
-          chmod +x ./gradlew
-          ./gradlew assembleDebug --stacktrace --info
-        else
-          # Используем системный gradle
-          gradle assembleDebug --stacktrace --info
-        fi
+        chmod +x ./gradlew || true
+        ./gradlew assembleDebug --no-daemon --stacktrace
         
-    - name: Find and upload APK
-      run: |
-        echo "Looking for APK files..."
-        find . -name "*.apk" -type f | head -5
-        
-        # Ищем APK в стандартных местах
-        if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
-          APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
-        elif [ -f "app/build/outputs/apk/debug/*.apk" ]; then
-          APK_PATH=$(ls app/build/outputs/apk/debug/*.apk | head -1)
-        else
-          # Ищем любой APK
-          APK_PATH=$(find . -name "*.apk" -type f | head -1)
-        fi
-        
-        if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
-          echo "APK found: $APK_PATH"
-          cp "$APK_PATH" VoidAssistant.apk
-        else
-          echo "No APK found"
-          exit 1
-        fi
-        
-    - name: Upload APK artifact
-      uses: actions/upload-artifact@v3
+    - name: 📦 Upload APK artifact
+      uses: actions/upload-artifact@v4
       with:
-        name: VoidAssistant-APK
-        path: VoidAssistant.apk
-        if-no-files-found: error
-        
-    - name: Upload build logs on failure
-      if: failure()
-      uses: actions/upload-artifact@v3
-      with:
-        name: build-logs
+        name: void-assistant-apk
         path: |
-          app/build/reports
-          app/build/outputs/logs
+          app/build/outputs/apk/debug/*.apk
+          app/build/outputs/apk/debug/output.json
+        if-no-files-found: error
+        retention-days: 7
+        
+    - name: 📊 Upload build report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-reports
+        path: |
+          app/build/reports/
+          app/build/outputs/logs/
+        retention-days: 30
+        
+    - name: 📝 Create summary
+      if: always()
+      run: |
+        echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "✅ **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "📱 **APK Files**: " >> $GITHUB_STEP_SUMMARY
+        find app/build/outputs/apk -name "*.apk" 2>/dev/null | while read file; do
+          echo "- \`$file\`" >> $GITHUB_STEP_SUMMARY
+        done || echo "- No APK files found" >> $GITHUB_STEP_SUMMARY
+        
+  release:
+    needs: build
+    if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - name: 📥 Download APK artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: void-assistant-apk
+        path: ./artifacts
+        
+    - name: 🏷️ Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: ./artifacts/*.apk
+        generate_release_notes: true
+        prerelease: false
