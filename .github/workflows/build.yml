@@ -1,0 +1,104 @@
+name: Build APK
+
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+    
+    - name: Setup Android
+      uses: android-actions/setup-android@v3
+    
+    - name: Create Android project
+      run: |
+        # Создаем самый простой рабочий проект
+        echo "Creating minimal Android project..."
+        
+        # Корневые файлы
+        cat > build.gradle << 'EOF'
+        buildscript {
+            repositories { google(); mavenCentral() }
+            dependencies { classpath 'com.android.tools.build:gradle:7.4.2' }
+        }
+        allprojects { repositories { google(); mavenCentral() } }
+        EOF
+        
+        echo "include ':app'" > settings.gradle
+        
+        # App модуль
+        mkdir -p app/src/main/{java/com/test/app,res/layout}
+        
+        cat > app/build.gradle << 'EOF'
+        plugins { id 'com.android.application' }
+        android {
+            compileSdk 33
+            defaultConfig {
+                applicationId "com.void.assistant"
+                minSdk 21
+                targetSdk 33
+                versionCode 1
+                versionName "1.0"
+            }
+            buildTypes {
+                debug { debuggable true }
+            }
+        }
+        dependencies {
+            implementation 'androidx.appcompat:appcompat:1.6.1'
+        }
+        EOF
+        
+        cat > app/src/main/AndroidManifest.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            <application android:label="Test">
+                <activity android:name=".MainActivity" android:exported="true">
+                    <intent-filter>
+                        <action android:name="android.intent.action.MAIN" />
+                        <category android:name="android.intent.category.LAUNCHER" />
+                    </intent-filter>
+                </activity>
+            </application>
+        </manifest>
+        EOF
+        
+        cat > app/src/main/java/com/test/app/MainActivity.java << 'EOF'
+        package com.test.app;
+        import androidx.appcompat.app.AppCompatActivity;
+        import android.os.Bundle;
+        public class MainActivity extends AppCompatActivity {
+            @Override protected void onCreate(Bundle savedInstanceState) {
+                super.onCreate(savedInstanceState);
+            }
+        }
+        EOF
+        
+        cat > app/src/main/res/layout/activity_main.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+        </LinearLayout>
+        EOF
+    
+    - name: Build with Gradle
+      run: |
+        # Используем системный gradle
+        gradle wrapper --gradle-version 7.5
+        chmod +x gradlew
+        ./gradlew :app:assembleDebug --stacktrace
+    
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-apk
+        path: app/build/outputs/apk/debug/*.apk
